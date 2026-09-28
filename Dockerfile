@@ -1,25 +1,26 @@
-# Используем легковесный базовый образ
-FROM python:3.11-slim
+FROM python:3.14.7-slim
+# install uv
+COPY --from=docker.io/astral/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# 1. Ставим системные компиляторы
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+# install system compilers
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# 2. Принудительно ставим ЛЕГКУЮ CPU-версию PyTorch (с таймаутом и ретраями)
-RUN pip install --default-timeout=2000 --retries 10 --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+COPY pyproject.toml uv.lock ./
 
-# 3. Ставим остальные зависимости
-RUN pip install --default-timeout=2000 --retries 10 --no-cache-dir fastapi uvicorn pydantic transformers sentence-transformers scipy
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-dev && \
+    uv run python  \
+    -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('cointegrated/rubert-tiny2')"
 
-# 4. Копируем исходный код
 COPY . .
 
-# 5. Прогрев кэша: скачиваем веса модели на этапе сборки
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('cointegrated/rubert-tiny2')"
+EXPOSE 8080
 
-EXPOSE 8000
-
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["uv", "run", "python3", "main.py"]
