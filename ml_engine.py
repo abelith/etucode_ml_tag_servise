@@ -1,44 +1,51 @@
 import logging
-from typing import List, Dict, Any
+import json
+from typing import Dict, Any
 from sentence_transformers import SentenceTransformer
 from scipy.spatial.distance import cosine
 
 logger = logging.getLogger(__name__)
 
 class TagPredictor:
-    
     def __init__(self) -> None:
-        logger.info("Загрузка модели rubert-tiny2...")
-        self.model = SentenceTransformer('cointegrated/rubert-tiny2')
+        logger.info("Загрузка локальной дообученной модели DeepPavlov...")
+        self.model = SentenceTransformer('./fine_tuned_rubert')
         
-        self.candidate_tags: List[str] = [
-            "инструменты", "музыка", "электроника", "одежда", "услуги", 
-            "гитара", "дрель", "коляска",
-            "покупка", "продажа", "помощь", "аренда", "обмен"
-        ]
-        
-        logger.info("Предвычисление векторов тегов...")
-        self.tag_embeddings: Dict[str, Any] = {
-            tag: self.model.encode(tag) for tag in self.candidate_tags
+        logger.info("Загрузка категорий из categories.json...")
+        with open('categories.json', 'r', encoding='utf-8') as f:
+            self.categories = json.load(f)
+
+        self.intent_embeddings: Dict[str, Any] = {
+            tag: self.model.encode(tag) for tag in self.categories.keys()
         }
-        logger.info("ML-движок успешно инициализирован.")
+        logger.info("ML-движок инициализирован: прямое векторное сравнение с защитой.")
 
     def process_message(self, text: str) -> Dict[str, Any]:
-        text_embedding = self.model.encode(text.lower())
+        text_lower = text.lower()
+        text_embedding = self.model.encode(text_lower)
         
-        scores: Dict[str, float] = {}
-        for tag, tag_emb in self.tag_embeddings.items():
-            similarity = 1 - cosine(text_embedding, tag_emb)
-            scores[tag] = similarity
-            
-        sorted_tags = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-        best_tags = [tag for tag, score in sorted_tags if score > 0.4]
+        scores = {
+            tag: 1 - cosine(text_embedding, tag_emb) 
+            for tag, tag_emb in self.intent_embeddings.items()
+        }
         
-        if not best_tags:
-            best_tags = ["прочее"]
+        # Сортируем результаты по убыванию уверенности
+        sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+        best_tag, best_score = sorted_scores[0]
+        second_best_score = sorted_scores[1][1] if len(sorted_scores) > 1 else 0
+        
+        MIN_SCORE = 0.35 
+        MIN_DELTA = 0.05 
+        
+        if best_score < MIN_SCORE:
+            logger.info(f"Слишком низкая уверенность ({best_score:.2f} < {MIN_SCORE}). Тег сброшен на 'прочее'.")
+            best_tag = "прочее"
+        elif (best_score - second_best_score) < MIN_DELTA:
+            logger.info(f"Спорное сообщение (разница всего {best_score - second_best_score:.2f}). Тег сброшен на 'прочее'.")
+            best_tag = "прочее"
             
         return {
-            "tags": best_tags[:3],
+            "tags": [best_tag],
             "vector": text_embedding.tolist()
         }
 
