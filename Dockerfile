@@ -1,5 +1,4 @@
-#Stage 1: Build
-FROM python:3.12.0-slim AS builder
+FROM python:3.14-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -7,8 +6,6 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never \
     UV_PYTHON=/usr/local/bin/python3.14
-
-WORKDIR /app
 
 WORKDIR /app
 
@@ -21,18 +18,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
 COPY . .
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
-
-# Stage 2: Image
-FROM python:3.12.0-slim AS runner
-
-WORKDIR /app
-
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app /app
-
-ENV PATH="/app/.venv/bin:$PATH"
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
@@ -49,4 +34,4 @@ COPY --from=builder /app /app
 
 EXPOSE 8080
 
-ENTRYPOINT ["python3", "main.py"]
+ENTRYPOINT ["/app/.venv/bin/python", "main.py"]
