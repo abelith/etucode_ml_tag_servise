@@ -6,3 +6,5 @@ docker-compose.yml
 README.md
 Dockerfile
 api
+__pycache__
+*.pyc
